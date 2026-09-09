@@ -48,14 +48,29 @@ from .operators.unstack_overlapped_uvs import UnstackOverlappedUvs
 from .operators.unwrap_selected import UnwrapSelected
 from .operators.uv_sync_mode import UvSyncMode
 from .operators.center_cursor_and_view_all import CenterCursorFrameAll
+from .operators.psx_square_unwrap import (
+    PsxUnwrapViewport,
+    PsxUnwrapCardinal,
+    PsxUnwrapChain,
+)
+from .operators.psx_grid_sections import (
+    PsxMoveSection,
+    PsxSetSectionScale,
+    PsxScaleToSection,
+)
 
 from .addon_preferences import UvToolkitPreferences
 
-from .properties import UvToolkitProperties
+from .properties import UvToolkitProperties, UvToolkitPsxProperties
 from .functions import get_addon_preferences
 
 from .ui.pie_3dview import Pie3dView
 from .ui.pie_uv_editor import PieUvEditor
+
+from .ui.psx_panel import (
+    UVTOOLKIT_PT_psx_square_unwrap,
+    UVTOOLKIT_PT_psx_grid_sections,
+)
 
 from .ui.panel import (
     UVTOOLKIT_PT_uv_sync,
@@ -137,6 +152,12 @@ classes = (
     UnstackOverlappedUvs,
     CenterCursorFrameAll,
     TestOp,
+    PsxUnwrapViewport,
+    PsxUnwrapCardinal,
+    PsxUnwrapChain,
+    PsxMoveSection,
+    PsxSetSectionScale,
+    PsxScaleToSection,
     UVTOOLKIT_PT_uv_sync,
     UVTOOLKIT_PT_uv_sync_settings,
     UVTOOLKIT_PT_tools,
@@ -154,10 +175,13 @@ classes = (
     UVTOOLKIT_PT_checker_map_horizontal_rectangle,
     UVTOOLKIT_PT_checker_map_vertical_rectangle,
     UVTOOLKIT_PT_help,
+    UVTOOLKIT_PT_psx_square_unwrap,
+    UVTOOLKIT_PT_psx_grid_sections,
     Pie3dView,
     PieUvEditor,
     UvToolkitPreferences,
     UvToolkitProperties,
+    UvToolkitPsxProperties,
 )
 
 def register():
@@ -165,6 +189,7 @@ def register():
         bpy.utils.register_class(cls)
 
     bpy.types.Scene.uv_toolkit = bpy.props.PointerProperty(type=UvToolkitProperties)
+    bpy.types.Scene.uv_toolkit_psx = bpy.props.PointerProperty(type=UvToolkitPsxProperties)
 
     wm = bpy.context.window_manager
 
@@ -180,6 +205,7 @@ def unregister():
         bpy.utils.unregister_class(cls)
 
     del bpy.types.Scene.uv_toolkit
+    del bpy.types.Scene.uv_toolkit_psx
 
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon

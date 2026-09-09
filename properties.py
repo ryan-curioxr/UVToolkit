@@ -2,6 +2,34 @@ from bpy.types import PropertyGroup
 from bpy.props import IntProperty, FloatProperty, EnumProperty, StringProperty
 
 
+class UvToolkitPsxProperties(PropertyGroup):
+    texture_size: IntProperty(
+        name="Texture Size",
+        description="Reference texture resolution in pixels (e.g. 1024)",
+        default=1024,
+        min=1,
+        soft_max=8192,
+    )
+    grid_divisions: IntProperty(
+        name="Divisions",
+        description="Number of sections the UV map is split into along each axis",
+        default=8,
+        min=1,
+        max=64,
+    )
+    section_scale_multiplier: FloatProperty(
+        name="Section Scale",
+        description=(
+            "Multiplier for section UV size. 1.0 fits a full 0-1 island into one "
+            "section; 2.0 makes it twice that size"
+        ),
+        default=1.0,
+        min=0.01,
+        soft_max=8.0,
+        precision=3,
+    )
+
+
 class UvToolkitProperties(PropertyGroup):
     checker_map_width: IntProperty(
         name="Width",
