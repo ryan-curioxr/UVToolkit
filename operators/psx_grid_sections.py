@@ -9,9 +9,8 @@ from ..utils.psx_uv_utils import (
     get_bbox,
     get_selected_uv_islands,
     has_selected_faces,
-    scale_island_to_span,
+    scale_selected_islands_to_section,
     section_center_uv,
-    section_uv_size,
     translate_island,
     uv_to_section,
 )
@@ -120,34 +119,11 @@ class PsxScaleToSection(Operator):
         return context.mode == 'EDIT_MESH' and has_selected_faces(context)
 
     def execute(self, context):
-        settings = context.scene.uv_toolkit_psx
-        target_span = section_uv_size(
-            settings.grid_divisions,
-            settings.section_scale_multiplier,
-        )
-
-        scaled_count = 0
-        for obj in context.objects_in_mode_unique_data:
-            if obj.type != 'MESH':
-                continue
-
-            bm = bmesh.from_edit_mesh(obj.data)
-            uv = ensure_uv_layer(bm)
-            islands = get_selected_uv_islands(bm, uv)
-            if not islands:
-                continue
-
-            for island_faces in islands:
-                scale_island_to_span(uv, island_faces, target_span)
-                scaled_count += 1
-
-            bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
-
+        scaled_count, target_span, pixel_size = scale_selected_islands_to_section(context)
         if scaled_count == 0:
             self.report({'WARNING'}, "No selected UV islands found")
             return {'CANCELLED'}
 
-        pixel_size = int(round(settings.texture_size * target_span))
         self.report(
             {'INFO'},
             f"Scaled {scaled_count} island(s) to {target_span:.4f} UV ({pixel_size}px)",

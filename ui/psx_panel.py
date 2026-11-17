@@ -29,10 +29,10 @@ class UVTOOLKIT_PT_psx_square_unwrap(Panel):
         info = layout.column(align=True)
         info.scale_y = 0.8
         info.label(text="Selected faces only", icon='INFO')
-        info.label(text="Orient → Gridify → Separate → Fit to Bounds")
-        info.label(text="Viewport: all face types, camera orientation")
-        info.label(text="Cardinal: horizontal quads, N/S/E/W")
-        info.label(text="Chain: connected quads, then separated")
+        info.label(text="Orient → Gridify → Separate → Fit to Bounds → Scale to Section")
+        info.label(text="Viewport: quads, triangle-pairs, and other faces")
+        info.label(text="Cardinal: horizontal quads / triangle-pairs, N/S/E/W")
+        info.label(text="Chain: connected quads / triangle-pairs, then separated")
 
 
 class UVTOOLKIT_PT_psx_grid_sections(Panel):

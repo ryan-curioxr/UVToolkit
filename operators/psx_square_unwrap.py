@@ -2,18 +2,23 @@ import bmesh
 from bpy.types import Operator
 
 from ..utils.psx_uv_utils import (
+    collect_unwrap_pieces,
     ensure_uv_layer,
     find_connected_quad_chains,
-    fit_each_face_to_bounds,
+    fit_each_island_to_bounds,
     get_view3d_region_data,
-    gridify_quad,
+    gridify_piece,
     has_selected_faces,
     is_horizontal_face,
-    order_quad_by_cardinal,
-    order_quad_by_view,
-    order_quad_for_chain,
-    separate_faces_on_grid,
+    is_quad_like_piece,
+    order_piece_for_chain,
+    order_verts_by_cardinal,
+    order_verts_by_view,
+    scale_selected_islands_to_section,
+    separate_islands_on_grid,
+    snap_selected_islands_to_section_centers,
     stretch_face_from_view,
+    unique_verts_from_faces,
 )
 
 
@@ -26,91 +31,100 @@ def _unwrap_selected_faces(obj, mode, region=None, region_3d=None):
         return 0, 0, []
 
     uv = ensure_uv_layer(bm)
-    processed = []
+    processed_islands = []
     skipped_reasons = []
 
     if mode == 'CHAIN':
-        processed, skipped_reasons = _unwrap_chain_faces(
+        processed_islands, skipped_reasons = _unwrap_chain_pieces(
             obj, selected_faces, uv, region, region_3d
         )
     else:
-        for face in selected_faces:
-            result = _unwrap_single_face(face, obj, mode, uv, region, region_3d)
+        for piece in collect_unwrap_pieces(selected_faces):
+            result = _unwrap_piece(piece, obj, mode, uv, region, region_3d)
             if result is True:
-                processed.append(face)
+                processed_islands.append(list(piece))
             else:
-                skipped_reasons.append(result)
+                skipped_reasons.extend([result] * len(piece))
 
-    if processed:
-        separate_faces_on_grid(processed, uv)
-        fit_each_face_to_bounds(processed, uv)
+    if processed_islands:
+        separate_islands_on_grid(processed_islands, uv)
+        fit_each_island_to_bounds(processed_islands, uv)
 
     bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
-    return len(processed), len(skipped_reasons), skipped_reasons
+    processed_count = sum(len(island) for island in processed_islands)
+    return processed_count, len(skipped_reasons), skipped_reasons
 
 
-def _unwrap_single_face(face, obj, mode, uv, region, region_3d):
-    if mode == 'CARDINAL':
-        if len(face.loops) != 4:
-            return "non-quad"
-        if not is_horizontal_face(face, obj):
-            return "not horizontal"
-        ordered = order_quad_by_cardinal(face, obj)
-        if ordered is None or len(set(ordered)) != 4:
-            return "could not orient"
-        gridify_quad(ordered, uv)
-        return True
-
-    if len(face.loops) == 4:
-        ordered = order_quad_by_view(face, obj, region, region_3d)
-        if ordered is None or len(set(ordered)) != 4:
-            stretch_face_from_view(face, obj, uv, region, region_3d)
+def _unwrap_piece(piece, obj, mode, uv, region, region_3d):
+    if is_quad_like_piece(piece):
+        if mode == 'CARDINAL':
+            if not all(is_horizontal_face(face, obj) for face in piece):
+                return "not horizontal"
+            ordered_verts = order_verts_by_cardinal(unique_verts_from_faces(piece), obj)
+            if ordered_verts is None or len(set(ordered_verts)) != 4:
+                return "could not orient"
+            gridify_piece(piece, ordered_verts, uv)
             return True
-        gridify_quad(ordered, uv)
+
+        ordered_verts = order_verts_by_view(
+            unique_verts_from_faces(piece), obj, region, region_3d
+        )
+        if ordered_verts is None or len(set(ordered_verts)) != 4:
+            if len(piece) == 1:
+                stretch_face_from_view(piece[0], obj, uv, region, region_3d)
+                return True
+            return "could not orient"
+        gridify_piece(piece, ordered_verts, uv)
         return True
 
-    stretch_face_from_view(face, obj, uv, region, region_3d)
-    return True
+    if mode == 'CARDINAL':
+        return "non-quad"
+    if len(piece) == 1:
+        stretch_face_from_view(piece[0], obj, uv, region, region_3d)
+        return True
+    return "could not orient"
 
 
-def _unwrap_chain_faces(obj, selected_faces, uv, region, region_3d):
-    processed = []
+def _unwrap_chain_pieces(obj, selected_faces, uv, region, region_3d):
+    processed_islands = []
     skipped_reasons = []
     chains = find_connected_quad_chains(selected_faces)
 
     if not chains:
         for face in selected_faces:
             skipped_reasons.append("non-quad" if len(face.loops) != 4 else "broken chain")
-        return processed, skipped_reasons
+        return processed_islands, skipped_reasons
 
     handled = set()
     for chain in chains:
         if not chain:
             continue
 
-        for strip_index, face in enumerate(chain):
-            prev_face = chain[strip_index - 1] if strip_index > 0 else None
-            next_face = chain[strip_index + 1] if strip_index + 1 < len(chain) else None
+        for strip_index, piece in enumerate(chain):
+            prev_piece = chain[strip_index - 1] if strip_index > 0 else None
+            next_piece = chain[strip_index + 1] if strip_index + 1 < len(chain) else None
 
             if len(chain) == 1:
-                ordered = order_quad_by_view(face, obj, region, region_3d)
+                ordered_verts = order_verts_by_view(
+                    unique_verts_from_faces(piece), obj, region, region_3d
+                )
             else:
-                ordered = order_quad_for_chain(face, prev_face, next_face, obj)
+                ordered_verts = order_piece_for_chain(piece, prev_piece, next_piece, obj)
 
-            if ordered is None or len(set(ordered)) != 4:
-                skipped_reasons.append("broken chain")
-                handled.add(face)
+            if ordered_verts is None or len(set(ordered_verts)) != 4:
+                skipped_reasons.extend(["broken chain"] * len(piece))
+                handled.update(piece)
                 continue
 
-            gridify_quad(ordered, uv)
-            processed.append(face)
-            handled.add(face)
+            gridify_piece(piece, ordered_verts, uv)
+            processed_islands.append(list(piece))
+            handled.update(piece)
 
     for face in selected_faces:
         if face not in handled:
             skipped_reasons.append("non-quad" if len(face.loops) != 4 else "broken chain")
 
-    return processed, skipped_reasons
+    return processed_islands, skipped_reasons
 
 
 def _run_unwrap(context, operator, mode):
@@ -144,7 +158,11 @@ def _run_unwrap(context, operator, mode):
         operator.report({'WARNING'}, _skip_message(mode, skipped_reasons))
         return {'CANCELLED'}
 
+    scaled_count, target_span, pixel_size = scale_selected_islands_to_section(context)
+    snap_selected_islands_to_section_centers(context)
     message = _success_message(mode, processed_count, skipped_count, skipped_reasons)
+    if scaled_count:
+        message += f"; scaled to {target_span:.4f} UV ({pixel_size}px)"
     operator.report({'INFO'}, message)
     return {'FINISHED'}
 
@@ -152,13 +170,13 @@ def _run_unwrap(context, operator, mode):
 def _skip_message(mode, skipped_reasons):
     if mode == 'CARDINAL':
         if skipped_reasons.count("non-quad") == len(skipped_reasons):
-            return "No selected quad faces found (cardinal mode requires quads)"
+            return "No selected quads or triangle-pairs found (cardinal mode requires quads)"
         if skipped_reasons.count("not horizontal") == len(skipped_reasons):
             return "No selected horizontal quad faces found (normal must align with world Z)"
         return "No valid horizontal quads found to unwrap"
     if mode == 'CHAIN':
         if skipped_reasons.count("non-quad") == len(skipped_reasons):
-            return "No selected quad faces found (chain mode requires quads)"
+            return "No selected quads or triangle-pairs found (chain mode requires quads)"
         return "No connected quad chains found (faces must share edges)"
     return "No selected faces found to unwrap"
 
@@ -181,8 +199,8 @@ class PsxUnwrapViewport(Operator):
     bl_idname = "uv.toolkit_psx_unwrap_viewport"
     bl_label = "Unwrap (Viewport)"
     bl_description = (
-        "Orient selected faces from the current view, Gridify quads into squares, "
-        "separate each face, then Fit to Bounds (0-1)"
+        "Orient selected faces from the current view, Gridify quads and triangle-pairs "
+        "into squares, separate islands, Fit to Bounds (0-1), then scale to section size"
     )
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -198,8 +216,8 @@ class PsxUnwrapCardinal(Operator):
     bl_idname = "uv.toolkit_psx_unwrap_cardinal"
     bl_label = "Unwrap (Cardinal / Horizontal)"
     bl_description = (
-        "Orient horizontal quads by world N/S/E/W, Gridify into squares, "
-        "separate each face, then Fit to Bounds (0-1)"
+        "Orient horizontal quads and triangle-pairs by world N/S/E/W, Gridify into squares, "
+        "separate islands, Fit to Bounds (0-1), then scale to section size"
     )
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -215,8 +233,8 @@ class PsxUnwrapChain(Operator):
     bl_idname = "uv.toolkit_psx_unwrap_chain"
     bl_label = "Unwrap (Chain / End-to-End)"
     bl_description = (
-        "Orient connected quad strips face-to-face, Gridify into squares, "
-        "separate each face, then Fit to Bounds (0-1)"
+        "Orient connected quad or triangle-pair strips face-to-face, Gridify into squares, "
+        "separate islands, Fit to Bounds (0-1), then scale to section size"
     )
     bl_options = {'REGISTER', 'UNDO'}
 
